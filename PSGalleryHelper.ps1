@@ -49,7 +49,8 @@ function Initialize-PSGallery {
     try{ [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 }
     catch{ Write-Error 'TLS 1.2 Not supported.' -ErrorAction Stop }
 
-    Set-Service winmgmt -StartupType Automatic
+    $WinmgmtService = Get-Service Winmgmt
+    if($WinmgmtService.StartType -eq 'Disabled'){ Set-Service winmgmt -StartupType Manual }
 
     if($env:PSModulePath -split ';' -notcontains "$env:ProgramFiles\WindowsPowerShell\Modules"){
         [Environment]::SetEnvironmentVariable(
@@ -132,5 +133,4 @@ function Initialize-PSGallery {
 
     if((Get-PSRepository 'PSGallery').InstallationPolicy -ne 'Trusted'){ Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted }
 }
-Initialize-PSGallery
-
+Initialize-PSGallery -ErrorAction Stop
