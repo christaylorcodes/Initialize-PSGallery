@@ -1,8 +1,8 @@
 <h1 align="center">
   <br>
-  <img src=".\media\powershell-hero.svg" alt="logo" height = 300 ></a>
+  <img src=".\Media\powershell-hero.svg" alt="logo" height = 300 ></a>
   <br>
-  Initizlize-PSGallery
+  Initialize-PSGallery
   <br>
 </h1>
 
