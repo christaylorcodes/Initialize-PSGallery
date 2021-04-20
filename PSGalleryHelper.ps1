@@ -63,7 +63,7 @@ function Initialize-PSGallery {
     try{
         $null = Get-Command Install-PackageProvider -ErrorAction Stop
         $null = Get-Command Install-Module -ErrorAction Stop
-        $PackageManagement = Get-Module PackageManagement -ErrorAction Stop
+        $PackageManagement = Get-Module PackageManagement -ListAvailable -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
         if($PackageManagement.Version -lt $PackageManagementMinVersion){ throw }
     }
     catch{
