@@ -70,7 +70,7 @@ function Initialize-PSGallery {
         Write-Verbose "Missing Package Manager, installing"
         $TempPath = "$env:TEMP\PSModules.zip"
         $NeededModules = 'PowerShellGet', 'PackageManagement'
-
+        Remove-Item "$env:TEMP\PowerShellGetModules" -Recurse -Force -ErrorAction SilentlyContinue
         Invoke-RestMethod $ModuleDownloadURL -OutFile $TempPath
         Add-Type -Assembly "System.IO.Compression.Filesystem"
         [System.IO.Compression.ZipFile]::ExtractToDirectory($TempPath,$env:TEMP)
