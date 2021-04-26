@@ -86,7 +86,7 @@ function Initialize-PSGallery {
         else{
             foreach($Module in $NeededModules){
                 Remove-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module" -Recurse -Force -ErrorAction SilentlyContinue
-                $null = New-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module"
+                $null = New-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module" -ItemType Directory
                 Copy-Item "$env:TEMP\PowerShellGetModules\$Module" "$env:ProgramFiles\WindowsPowerShell\Modules" -Force -Recurse
             }
         }
