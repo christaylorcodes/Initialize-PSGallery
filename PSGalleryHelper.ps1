@@ -133,5 +133,7 @@ function Initialize-PSGallery {
     }
 
     if((Get-PSRepository 'PSGallery').InstallationPolicy -ne 'Trusted'){ Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted }
+
+    Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Scope Process -Confirm:$false -Force
 }
 Initialize-PSGallery -ErrorAction Stop
