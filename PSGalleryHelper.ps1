@@ -38,7 +38,7 @@ function Initialize-PSGallery {
         Import-Module $Module -Force
     }
 
-    if($Host.Version.Major -lt 3){ Write-Error 'Requires PowerShell version 3 or greater.' -ErrorAction Stop }
+    if($PSVersionTable.PSVersion.Major -lt 3){ Write-Error 'Requires PowerShell version 3 or greater.' -ErrorAction Stop }
 
     try{
         [version]$DotNetVersion = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' -Name Version).Version
