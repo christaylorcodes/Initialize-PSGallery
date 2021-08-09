@@ -102,7 +102,8 @@ function Initialize-PSGallery {
                 $Path = Join-Path $_ $Module
                 if((Test-Path $Path)){
                     $Found = $true
-                    Import-Module $Path
+                    $ModulePath = Get-ChildItem $Path -Recurse | Where-Object{ $_.Name -eq "$($Module).psd1" } | Select -First 1
+                    Import-Module $ModulePath.FullName
                 }
             }
             if(!$Found){ Write-Error "Unable to find $Module" }
