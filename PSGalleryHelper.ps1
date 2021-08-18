@@ -17,12 +17,13 @@ function Initialize-PSGallery {
     $NuGetMinVersion = [System.Version]'2.8.5.201'
     $PackageManagementMinVersion = [System.Version]'1.4.4'
     $ModuleDownloadURL = 'https://raw.githubusercontent.com/christaylorcodes/Initialize-PSGallery/main/PowerShellGetModules.zip'
+    $GalleryURL = 'https://www.powershellgallery.com/api/v2/'
 
     function Register-PSGallery {
         if($Host.Version.Major -gt 4){ Register-PSRepository -Default }
         else{
             Import-Module PowerShellGet
-            Register-PSRepository -Name PSGallery -SourceLocation https://www.powershellgallery.com/api/v2/ -InstallationPolicy Trusted
+            Register-PSRepository -Name PSGallery -SourceLocation $GalleryURL -InstallationPolicy Trusted
         }
     }
 
@@ -38,7 +39,7 @@ function Initialize-PSGallery {
         Import-Module $Module -Force
     }
 
-    if($Host.Version.Major -lt 3){ Write-Error 'Requires PowerShell version 3 or greater.' -ErrorAction Stop }
+    if($PSVersionTable.PSVersion.Major -lt 3){ Write-Error 'Requires PowerShell version 3 or greater.' -ErrorAction Stop }
 
     try{
         [version]$DotNetVersion = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' -Name Version).Version
@@ -59,6 +60,8 @@ function Initialize-PSGallery {
             'Machine'
         )
     }
+
+    Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Scope Process -Confirm:$false -Force
 
     try{
         $null = Get-Command Install-PackageProvider -ErrorAction Stop
@@ -100,7 +103,8 @@ function Initialize-PSGallery {
                 $Path = Join-Path $_ $Module
                 if((Test-Path $Path)){
                     $Found = $true
-                    Import-Module $Path
+                    $ModulePath = Get-ChildItem $Path -Recurse | Where-Object{ $_.Name -eq "$($Module).psd1" } | Select -First 1
+                    Import-Module $ModulePath.FullName
                 }
             }
             if(!$Found){ Write-Error "Unable to find $Module" }
@@ -120,6 +124,9 @@ function Initialize-PSGallery {
         $null = Install-PackageProvider -Name Nuget -Force -Confirm:$false
     }
 
+    try{ $null = Get-PackageSource -Name PSNuGet -ErrorAction Stop }
+    catch{ $null = Register-PackageSource -Name PSNuGet -Location $GalleryURL -ProviderName NuGet -Force }
+
     try{ $null = Get-PSRepository 'PSGallery' -ErrorAction Stop }
     catch {
         if($_.exception.message -eq 'Invalid class'){
@@ -133,7 +140,5 @@ function Initialize-PSGallery {
     }
 
     if((Get-PSRepository 'PSGallery').InstallationPolicy -ne 'Trusted'){ Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted }
-
-    Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Scope Process -Confirm:$false -Force
 }
 Initialize-PSGallery -ErrorAction Stop
