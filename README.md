@@ -37,7 +37,7 @@ This function will fix common issues that prevent the use of PowerShell Gallery.
 You can simply invoke this script before interacting with the PowerShell Gallery.
 
 ```powershell
-Invoke-RestMethod 'https://bit.ly/Initialize-PSGallery' | Invoke-Expression
+Invoke-RestMethod 'https://raw.githubusercontent.com/christaylorcodes/Initialize-PSGallery/main/PSGalleryHelper.ps1' | Invoke-Expression
 ```
 
 ## [Contributing](https://github.com/christaylorcodes/GitHub-Template/blob/main/CONTRIBUTING.md)
