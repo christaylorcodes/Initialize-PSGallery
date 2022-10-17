@@ -15,7 +15,7 @@ Function that will fix issues preventing PowerShell Gallery access.
 <div align="center">
 
 [![Build status](https://ci.appveyor.com/api/projects/status/gkmh0h0234s1x7rt?svg=true)](https://ci.appveyor.com/project/christaylorcodes/connectwisemanageapi)
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/a28d32ca401b431a8c8074293383157a)](https://www.codacy.com/gh/christaylorcodes/Initialize-PSGallery/dashboard?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=christaylorcodes/Initialize-PSGallery&amp;utm_campaign=Badge_Grade)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/a28d32ca401b431a8c8074293383157a)](https://www.codacy.com/gh/christaylorcodes/Initialize-PSGallery/dashboard/dashboard?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=christaylorcodes/Initialize-PSGallery&amp;utm_campaign=Badge_Grade)
 [![Donate](https://img.shields.io/badge/$-donate-ff69b4.svg?maxAge=2592000&amp;style=flat)](https://github.com/christaylorcodes/GitHub-Template/blob/main/DONATE.md)
 
 </div>

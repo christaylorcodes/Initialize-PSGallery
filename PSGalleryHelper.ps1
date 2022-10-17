@@ -20,17 +20,17 @@ function Initialize-PSGallery {
     $GalleryURL = 'https://www.powershellgallery.com/api/v2/'
 
     function Register-PSGallery {
-        if($Host.Version.Major -gt 4){ Register-PSRepository -Default }
-        else{
+        if ($Host.Version.Major -gt 4) { Register-PSRepository -Default }
+        else {
             Import-Module PowerShellGet
             Register-PSRepository -Name PSGallery -SourceLocation $GalleryURL -InstallationPolicy Trusted
         }
     }
 
     function Redo-PowerShellGet {
-        Write-Verbose "Issue with PowerShellGet, Reinstalling."
+        Write-Verbose 'Issue with PowerShellGet, Reinstalling.'
         $Module = 'PowerShellGet'
-        foreach($ProfilePath in $env:PSModulePath.Split(';')){
+        foreach ($ProfilePath in $env:PSModulePath.Split(';')) {
             $FullPath = Join-Path $ProfilePath $Module
             Get-ChildItem $FullPath -Exclude '1.0.0.1' -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
         }
@@ -39,21 +39,21 @@ function Initialize-PSGallery {
         Import-Module $Module -Force
     }
 
-    if($PSVersionTable.PSVersion.Major -lt 3){ Write-Error 'Requires PowerShell version 3 or greater.' -ErrorAction Stop }
+    if ($PSVersionTable.PSVersion.Major -lt 3) { Write-Error 'Requires PowerShell version 3 or greater.' -ErrorAction Stop }
 
-    try{
+    try {
         [version]$DotNetVersion = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' -Name Version).Version
-        if($DotNetVersion -lt '4.5'){ throw }
+        if ($DotNetVersion -lt '4.5') { throw }
     }
-    catch{ Write-Error '.NET version 4.5 or greater is needed.' -ErrorAction Stop }
+    catch { Write-Error '.NET version 4.5 or greater is needed.' -ErrorAction Stop }
 
-    try{ [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 }
-    catch{ Write-Error 'TLS 1.2 Not supported.' -ErrorAction Stop }
+    try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 }
+    catch { Write-Error 'TLS 1.2 Not supported.' -ErrorAction Stop }
 
     $WinmgmtService = Get-Service Winmgmt
-    if($WinmgmtService.StartType -eq 'Disabled'){ Set-Service winmgmt -StartupType Manual }
+    if ($WinmgmtService.StartType -eq 'Disabled') { Set-Service winmgmt -StartupType Manual }
 
-    if($env:PSModulePath -split ';' -notcontains "$env:ProgramFiles\WindowsPowerShell\Modules"){
+    if ($env:PSModulePath -split ';' -notcontains "$env:ProgramFiles\WindowsPowerShell\Modules") {
         [Environment]::SetEnvironmentVariable(
             'PSModulePath',
             ((([Environment]::GetEnvironmentVariable('PSModulePath', 'Machine') -split ';') + "$env:ProgramFiles\WindowsPowerShell\Modules") -join ';'),
@@ -63,31 +63,31 @@ function Initialize-PSGallery {
 
     Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Scope Process -Confirm:$false -Force
 
-    try{
+    try {
         $null = Get-Command Install-PackageProvider -ErrorAction Stop
         $null = Get-Command Install-Module -ErrorAction Stop
         $PackageManagement = Get-Module PackageManagement -ListAvailable -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
-        if($PackageManagement.Version -lt $PackageManagementMinVersion){ throw }
+        if ($PackageManagement.Version -lt $PackageManagementMinVersion) { throw }
     }
-    catch{
-        Write-Verbose "Missing Package Manager, installing"
+    catch {
+        Write-Verbose 'Missing Package Manager, installing'
         $TempPath = "$env:TEMP\PSModules.zip"
         $NeededModules = 'PowerShellGet', 'PackageManagement'
         Remove-Item "$env:TEMP\PowerShellGetModules" -Recurse -Force -ErrorAction SilentlyContinue
         Invoke-RestMethod $ModuleDownloadURL -OutFile $TempPath
-        Add-Type -Assembly "System.IO.Compression.Filesystem"
-        [System.IO.Compression.ZipFile]::ExtractToDirectory($TempPath,$env:TEMP)
+        Add-Type -Assembly 'System.IO.Compression.Filesystem'
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($TempPath, $env:TEMP)
 
-        if($Host.Version.Major -lt 5){
-            foreach($Module in $NeededModules){
+        if ($Host.Version.Major -lt 5) {
+            foreach ($Module in $NeededModules) {
                 Remove-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module" -Recurse -Force -ErrorAction SilentlyContinue
-                Get-ChildItem "$env:TEMP\PowerShellGetModules\$Module" | Get-ChildItem -Recurse | ForEach-Object{
+                Get-ChildItem "$env:TEMP\PowerShellGetModules\$Module" | Get-ChildItem -Recurse | ForEach-Object {
                     Copy-Item $_.FullName "$env:ProgramFiles\WindowsPowerShell\Modules\$Module" -Force
                 }
             }
         }
-        else{
-            foreach($Module in $NeededModules){
+        else {
+            foreach ($Module in $NeededModules) {
                 Remove-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module" -Recurse -Force -ErrorAction SilentlyContinue
                 $null = New-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module" -ItemType Directory -ErrorAction SilentlyContinue
                 Copy-Item "$env:TEMP\PowerShellGetModules\$Module" "$env:ProgramFiles\WindowsPowerShell\Modules" -Force -Recurse
@@ -97,48 +97,51 @@ function Initialize-PSGallery {
         Remove-Item $TempPath -Force -ErrorAction SilentlyContinue
         Remove-Item "$env:TEMP\PowerShellGetModules" -Recurse -Force -ErrorAction SilentlyContinue
 
-        foreach($Module in $NeededModules){
+        foreach ($Module in $NeededModules) {
             $Found = $false
-            $env:PSModulePath -split ';' | ForEach-Object{
+            $env:PSModulePath -split ';' | ForEach-Object {
                 $Path = Join-Path $_ $Module
-                if((Test-Path $Path)){
+                if ((Test-Path $Path)) {
                     $Found = $true
-                    $ModulePath = Get-ChildItem $Path -Recurse | Where-Object{ $_.Name -eq "$($Module).psd1" } | Select -First 1
+                    $ModulePath = Get-ChildItem $Path -Recurse | Where-Object { $_.Name -eq "$($Module).psd1" } | Select-Object -First 1
                     Import-Module $ModulePath.FullName
                 }
             }
-            if(!$Found){ Write-Error "Unable to find $Module" }
+            if (!$Found) { Write-Error "Unable to find $Module" }
         }
     }
 
-    try{ $null = Get-Command Get-PackageProvider -ErrorAction Stop }
-    catch{ Redo-PowerShellGet }
-    try{
-        $Nuget = Get-PackageProvider NuGet -ListAvailable -ErrorAction Stop | Where-Object {$_.Version -gt $NuGetMinVersion}
+    try { $null = Get-Command Get-PackageProvider -ErrorAction Stop }
+    catch { Redo-PowerShellGet }
+    try {
+        $Nuget = Get-PackageProvider NuGet -ListAvailable -ErrorAction Stop | Where-Object { $_.Version -gt $NuGetMinVersion }
+        try { Update-Module PowerShellGet -Confirm:$false -ErrorAction Stop }
+        catch { Install-Module PowerShellGet -Force -Confirm:$false }
     }
-    catch{
+    catch {
         $null = Install-PackageProvider NuGet -MinimumVersion $NuGetMinVersion -Force
         $null = Install-Module PowershellGet -Force -Confirm:$false
     }
-    if(!$Nuget){
+    if (!$Nuget) {
         $null = Install-PackageProvider -Name Nuget -Force -Confirm:$false
     }
 
-    try{ $null = Get-PackageSource -Name PSNuGet -ErrorAction Stop }
-    catch{ $null = Register-PackageSource -Name PSNuGet -Location $GalleryURL -ProviderName NuGet -Force }
 
-    try{ $null = Get-PSRepository 'PSGallery' -ErrorAction Stop }
+    try { $null = Get-PackageSource -Name PSNuGet -ErrorAction Stop }
+    catch { $null = Register-PackageSource -Name PSNuGet -Location $GalleryURL -ProviderName NuGet -Force }
+
+    try { $null = Get-PSRepository 'PSGallery' -ErrorAction Stop }
     catch {
-        if($_.exception.message -eq 'Invalid class'){
+        if ($_.exception.message -eq 'Invalid class') {
             Redo-PowerShellGet
         }
-        else{
-            Write-Verbose "Registering PSGallery."
+        else {
+            Write-Verbose 'Registering PSGallery.'
             Remove-Item "$env:LOCALAPPDATA\Microsoft\windows\PowerShell\PowerShellGet\PSRepositories.xml" -ErrorAction SilentlyContinue
             Register-PSGallery
-         }
+        }
     }
 
-    if((Get-PSRepository 'PSGallery').InstallationPolicy -ne 'Trusted'){ Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted }
+    if ((Get-PSRepository 'PSGallery').InstallationPolicy -ne 'Trusted') { Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted }
 }
 Initialize-PSGallery -ErrorAction Stop
