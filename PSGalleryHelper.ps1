@@ -115,17 +115,16 @@ function Initialize-PSGallery {
     catch { Redo-PowerShellGet }
     try {
         $Nuget = Get-PackageProvider NuGet -ListAvailable -ErrorAction Stop | Where-Object { $_.Version -gt $NuGetMinVersion }
-        try { Update-Module PowerShellGet -Confirm:$false -ErrorAction Stop }
+        try { Update-Module PowerShellGet -Force -Confirm:$false -ErrorAction Stop }
         catch { Install-Module PowerShellGet -Force -Confirm:$false }
     }
     catch {
-        $null = Install-PackageProvider NuGet -MinimumVersion $NuGetMinVersion -Force
+        $null = Install-PackageProvider NuGet -MinimumVersion $NuGetMinVersion -Force -Confirm:$false
         $null = Install-Module PowershellGet -Force -Confirm:$false
     }
     if (!$Nuget) {
-        $null = Install-PackageProvider -Name Nuget -Force -Confirm:$false
+        $null = Install-PackageProvider NuGet -MinimumVersion $NuGetMinVersion -Force -Confirm:$false
     }
-
 
     try { $null = Get-PackageSource -Name PSNuGet -ErrorAction Stop }
     catch { $null = Register-PackageSource -Name PSNuGet -Location $GalleryURL -ProviderName NuGet -Force }
