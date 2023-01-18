@@ -61,7 +61,7 @@ function Initialize-PSGallery {
         )
     }
 
-    Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Scope Process -Confirm:$false -Force -ErrorAction Continue
+    Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Scope Process -Confirm:$false -Force -ErrorAction SilentlyContinue
 
     try {
         $null = Get-Command Install-PackageProvider -ErrorAction Stop
