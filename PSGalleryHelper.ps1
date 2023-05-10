@@ -61,6 +61,9 @@ function Initialize-PSGallery {
         )
     }
 
+    # Remove Package Management Preview
+    & MsiExec /X { 57E5A8BB-41EB-4F09-B332-B535C5954A28 } /qn
+    
     Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Scope Process -Confirm:$false -Force
 
     try {
@@ -79,6 +82,7 @@ function Initialize-PSGallery {
         [System.IO.Compression.ZipFile]::ExtractToDirectory($TempPath, $env:TEMP)
 
         if ($Host.Version.Major -lt 5) {
+            # These versions of PoSh want the files in the root of the drive not version sub folders
             foreach ($Module in $NeededModules) {
                 Remove-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module" -Recurse -Force -ErrorAction SilentlyContinue
                 Get-ChildItem "$env:TEMP\PowerShellGetModules\$Module" | Get-ChildItem -Recurse | ForEach-Object {
