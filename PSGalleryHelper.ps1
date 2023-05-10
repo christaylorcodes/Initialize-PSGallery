@@ -60,11 +60,10 @@ function Initialize-PSGallery {
             'Machine'
         )
     }
-
     # Remove Package Management Preview
     & MsiExec /X { 57E5A8BB-41EB-4F09-B332-B535C5954A28 } /qn
     
-    Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Scope Process -Confirm:$false -Force
+    Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Scope Process -Confirm:$false -Force -ErrorAction SilentlyContinue
 
     try {
         $null = Get-Command Install-PackageProvider -ErrorAction Stop
