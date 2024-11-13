@@ -16,8 +16,9 @@ function Initialize-PSGallery {
     Param()
     $NuGetMinVersion = [System.Version]'2.8.5.201'
     $PackageManagementMinVersion = [System.Version]'1.4.4'
-    $ModuleDownloadURL = 'https://raw.githubusercontent.com/christaylorcodes/Initialize-PSGallery/main/PowerShellGetModules.zip'
     $GalleryURL = 'https://www.powershellgallery.com/api/v2/'
+    $PowerShellGetURL = 'https://psg-prod-eastus.azureedge.net/packages/powershellget.2.2.5.nupkg'
+    $PackageManagementURL = 'https://psg-prod-eastus.azureedge.net/packages/packagemanagement.1.4.7.nupkg'
 
     function Register-PSGallery {
         if ($Host.Version.Major -gt 4) { Register-PSRepository -Default }
@@ -27,15 +28,70 @@ function Initialize-PSGallery {
         }
     }
 
+    function _Install-Module {
+        [cmdletbinding()]
+        Param(
+            [Parameter(mandatory = $true)]
+            $Module,
+            [Parameter(mandatory = $true)]
+            $ModuleURL
+        )
+        $DownloadPath = "$env:TEMP\$($Module).zip"
+        $ExtractPath = "$env:TEMP\$($Module)"
+        Remove-Item @($DownloadPath, $ExtractPath) -Recurse -Force -Confirm:$false -ErrorAction SilentlyContinue
+        Invoke-RestMethod $ModuleURL -OutFile $DownloadPath
+        Add-Type -Assembly 'System.IO.Compression.Filesystem'
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($DownloadPath, $ExtractPath)
+
+        $ModuleData = Import-PowerShellDataFile -Path "$ExtractPath\$($Module).psd1"
+        
+        if ($Host.Version.Major -ge 5) {
+            Remove-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module" -Recurse -Force -ErrorAction SilentlyContinue
+            Get-ChildItem "$env:TEMP\$Module" | Get-ChildItem -Recurse | ForEach-Object {
+                Copy-Item $_.FullName "$env:ProgramFiles\WindowsPowerShell\Modules\$Module\$($ModuleData.ModuleVersion)" -Force
+            }
+        }
+        else {
+            # These versions of PoSh want the files in the root of the drive not version sub folders
+            Remove-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module" -Recurse -Force -ErrorAction SilentlyContinue
+            $null = New-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module" -ItemType Directory -ErrorAction SilentlyContinue
+            Copy-Item "$env:TEMP\$Module" "$env:ProgramFiles\WindowsPowerShell\Modules" -Force -Recurse
+        }
+
+        Remove-Item @($DownloadPath, $ExtractPath) -Recurse -Force -Confirm:$false -ErrorAction SilentlyContinue
+    }
+    
     function Redo-PowerShellGet {
         Write-Verbose 'Issue with PowerShellGet, Reinstalling.'
         $Module = 'PowerShellGet'
-        foreach ($ProfilePath in $env:PSModulePath.Split(';')) {
-            $FullPath = Join-Path $ProfilePath $Module
-            Get-ChildItem $FullPath -Exclude '1.0.0.1' -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
+        try {
+            foreach ($ProfilePath in $env:PSModulePath.Split(';')) {
+                $FullPath = Join-Path $ProfilePath $Module
+                Get-ChildItem $FullPath -Exclude '1.0.0.1' -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
+            }
+            Register-PSGallery -ErrorAction Stop
+            $null = Install-Module $Module -Force -AllowClobber -ErrorAction Stop
         }
-        Register-PSGallery
-        $null = Install-Module $Module -Force -AllowClobber
+        catch {
+            _Install-Module -Module $Module -ModuleURL $PowerShellGetURL
+        }
+        Import-Module $Module -Force
+    }
+
+    function Redo-PackageManagement {
+        Write-Verbose 'Issue with PackageManagement, Reinstalling.'
+        $Module = 'PackageManagement'
+        try {
+            foreach ($ProfilePath in $env:PSModulePath.Split(';')) {
+                $FullPath = Join-Path $ProfilePath $Module
+                Get-ChildItem $FullPath -Exclude '1.0.0.1' -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
+            }
+            Register-PSGallery -ErrorAction Stop
+            $null = Install-Module $Module -Force -AllowClobber -ErrorAction Stop
+        }
+        catch {
+            _Install-Module -Module $Module -ModuleURL $PackageManagementURL
+        }
         Import-Module $Module -Force
     }
 
@@ -62,9 +118,12 @@ function Initialize-PSGallery {
     }
     
     # Remove Package Management Preview
-    & MsiExec /X '{57E5A8BB-41EB-4F09-B332-B535C5954A28}' /qn
+    $null = & MsiExec /X '{57E5A8BB-41EB-4F09-B332-B535C5954A28}' /qn
     
     Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Scope Process -Confirm:$false -Force -ErrorAction SilentlyContinue
+
+    try { $null = Invoke-RestMethod $GalleryURL }
+    catch { throw "Unable to contact gallery: $GalleryURL" }
 
     try {
         $null = Get-Command Install-PackageProvider -ErrorAction Stop
@@ -74,57 +133,21 @@ function Initialize-PSGallery {
     }
     catch {
         Write-Verbose 'Missing Package Manager, installing'
-        $TempPath = "$env:TEMP\PSModules.zip"
-        $NeededModules = 'PowerShellGet', 'PackageManagement'
-        Remove-Item "$env:TEMP\PowerShellGetModules" -Recurse -Force -ErrorAction SilentlyContinue
-        Invoke-RestMethod $ModuleDownloadURL -OutFile $TempPath
-        Add-Type -Assembly 'System.IO.Compression.Filesystem'
-        [System.IO.Compression.ZipFile]::ExtractToDirectory($TempPath, $env:TEMP)
-
-        if ($Host.Version.Major -lt 5) {
-            # These versions of PoSh want the files in the root of the drive not version sub folders
-            foreach ($Module in $NeededModules) {
-                Remove-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module" -Recurse -Force -ErrorAction SilentlyContinue
-                Get-ChildItem "$env:TEMP\PowerShellGetModules\$Module" | Get-ChildItem -Recurse | ForEach-Object {
-                    Copy-Item $_.FullName "$env:ProgramFiles\WindowsPowerShell\Modules\$Module" -Force
-                }
-            }
-        }
-        else {
-            foreach ($Module in $NeededModules) {
-                Remove-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module" -Recurse -Force -ErrorAction SilentlyContinue
-                $null = New-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module" -ItemType Directory -ErrorAction SilentlyContinue
-                Copy-Item "$env:TEMP\PowerShellGetModules\$Module" "$env:ProgramFiles\WindowsPowerShell\Modules" -Force -Recurse
-            }
-        }
-
-        Remove-Item $TempPath -Force -ErrorAction SilentlyContinue
-        Remove-Item "$env:TEMP\PowerShellGetModules" -Recurse -Force -ErrorAction SilentlyContinue
-
-        foreach ($Module in $NeededModules) {
-            $Found = $false
-            $env:PSModulePath -split ';' | ForEach-Object {
-                $Path = Join-Path $_ $Module
-                if ((Test-Path $Path)) {
-                    $Found = $true
-                    $ModulePath = Get-ChildItem $Path -Recurse | Where-Object { $_.Name -eq "$($Module).psd1" } | Select-Object -First 1
-                    Import-Module $ModulePath.FullName
-                }
-            }
-            if (!$Found) { Write-Error "Unable to find $Module" }
-        }
+        Redo-PackageManagement
     }
 
     try { $null = Get-Command Get-PackageProvider -ErrorAction Stop }
     catch { Redo-PowerShellGet }
+
     try {
         $Nuget = Get-PackageProvider NuGet -ListAvailable -ErrorAction Stop | Where-Object { $_.Version -gt $NuGetMinVersion }
-        try { Update-Module PowerShellGet -Force -Confirm:$false -ErrorAction Stop }
-        catch { Install-Module PowerShellGet -Force -Confirm:$false }
+        try { Update-Module PowerShellGet -Confirm:$false -ErrorAction Stop }
+        catch { Install-Module PowerShellGet -Force -Confirm:$false -ErrorAction Stop }
     }
     catch {
         $null = Install-PackageProvider NuGet -MinimumVersion $NuGetMinVersion -Force -Confirm:$false
-        $null = Install-Module PowershellGet -Force -Confirm:$false
+        try { Install-Module PowerShellGet -Force -Confirm:$false }
+        catch { Redo-PowerShellGet }
     }
     if (!$Nuget) {
         $null = Install-PackageProvider NuGet -MinimumVersion $NuGetMinVersion -Force -Confirm:$false
