@@ -42,10 +42,9 @@ function Initialize-PSGallery {
         Invoke-RestMethod $ModuleURL -OutFile $DownloadPath
         Add-Type -Assembly 'System.IO.Compression.Filesystem'
         [System.IO.Compression.ZipFile]::ExtractToDirectory($DownloadPath, $ExtractPath)
-
-        $ModuleData = Import-PowerShellDataFile -Path "$ExtractPath\$($Module).psd1"
         
         if ($Host.Version.Major -ge 5) {
+            $ModuleData = Import-PowerShellDataFile -Path "$ExtractPath\$($Module).psd1"
             Remove-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module" -Recurse -Force -ErrorAction SilentlyContinue
             Get-ChildItem "$env:TEMP\$Module" | Get-ChildItem -Recurse | ForEach-Object {
                 Copy-Item $_.FullName "$env:ProgramFiles\WindowsPowerShell\Modules\$Module\$($ModuleData.ModuleVersion)" -Force
@@ -139,18 +138,14 @@ function Initialize-PSGallery {
     try { $null = Get-Command Get-PackageProvider -ErrorAction Stop }
     catch { Redo-PowerShellGet }
 
-    try {
-        $Nuget = Get-PackageProvider NuGet -ListAvailable -ErrorAction Stop | Where-Object { $_.Version -gt $NuGetMinVersion }
-        try { Update-Module PowerShellGet -Confirm:$false -ErrorAction Stop }
-        catch { Install-Module PowerShellGet -Force -Confirm:$false -ErrorAction Stop }
-    }
-    catch {
-        $null = Install-PackageProvider NuGet -MinimumVersion $NuGetMinVersion -Force -Confirm:$false
-        try { Install-Module PowerShellGet -Force -Confirm:$false }
-        catch { Redo-PowerShellGet }
-    }
+    $Nuget = Get-PackageProvider NuGet -ListAvailable -ErrorAction SilentlyContinue | Where-Object { $_.Version -gt $NuGetMinVersion }
     if (!$Nuget) {
         $null = Install-PackageProvider NuGet -MinimumVersion $NuGetMinVersion -Force -Confirm:$false
+        try { Update-Module PowerShellGet -Confirm:$false -ErrorAction Stop }
+        catch { 
+            try{ Install-Module PowerShellGet -Force -Confirm:$false -ErrorAction Stop }
+            catch { Redo-PowerShellGet }
+        }
     }
 
     try { $null = Get-PackageSource -Name PSNuGet -ErrorAction Stop }
