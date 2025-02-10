@@ -40,15 +40,15 @@ function Initialize-PSGallery {
         $ExtractPath = "$env:TEMP\$($Module)"
         Remove-Item @($DownloadPath, $ExtractPath) -Recurse -Force -Confirm:$false -ErrorAction SilentlyContinue
         Invoke-RestMethod $ModuleURL -OutFile $DownloadPath
+        Unblock-File $DownloadPath
         Add-Type -Assembly 'System.IO.Compression.Filesystem'
         [System.IO.Compression.ZipFile]::ExtractToDirectory($DownloadPath, $ExtractPath)
         
-        if ($Host.Version.Major -ge 5) {
+        if ($PSVersionTable.PSVersion.Major -ge 5) {
             $ModuleData = Import-PowerShellDataFile -Path "$ExtractPath\$($Module).psd1"
             Remove-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module" -Recurse -Force -ErrorAction SilentlyContinue
-            Get-ChildItem "$env:TEMP\$Module" | Get-ChildItem -Recurse | ForEach-Object {
-                Copy-Item $_.FullName "$env:ProgramFiles\WindowsPowerShell\Modules\$Module\$($ModuleData.ModuleVersion)" -Force
-            }
+            $null = New-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module\$($ModuleData.ModuleVersion)" -ItemType Directory -Force
+            [System.IO.Compression.ZipFile]::ExtractToDirectory($DownloadPath, "$env:ProgramFiles\WindowsPowerShell\Modules\$Module\$($ModuleData.ModuleVersion)")
         }
         else {
             # These versions of PoSh want the files in the root of the drive not version sub folders
@@ -143,7 +143,7 @@ function Initialize-PSGallery {
         $null = Install-PackageProvider NuGet -MinimumVersion $NuGetMinVersion -Force -Confirm:$false
         try { Update-Module PowerShellGet -Confirm:$false -ErrorAction Stop }
         catch { 
-            try{ Install-Module PowerShellGet -Force -Confirm:$false -ErrorAction Stop }
+            try { Install-Module PowerShellGet -Force -Confirm:$false -ErrorAction Stop }
             catch { Redo-PowerShellGet }
         }
     }
@@ -153,7 +153,7 @@ function Initialize-PSGallery {
 
     try { $null = Get-PSRepository 'PSGallery' -ErrorAction Stop }
     catch {
-        if ($_.exception.message -eq 'Invalid class') {
+        if ($_.exception.message -eq 'Invalid class' -or $_.exception.message -eq 'Unable to find module providers (PowerShellGet).') {
             Redo-PowerShellGet
         }
         else {
