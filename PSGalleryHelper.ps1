@@ -124,20 +124,7 @@ function Initialize-PSGallery {
     try { $null = Invoke-RestMethod $GalleryURL }
     catch { throw "Unable to contact gallery: $GalleryURL" }
 
-    try {
-        $null = Get-Command Install-PackageProvider -ErrorAction Stop
-        $null = Get-Command Install-Module -ErrorAction Stop
-        $PackageManagement = Get-Module PackageManagement -ListAvailable -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
-        if ($PackageManagement.Version -lt $PackageManagementMinVersion) { throw }
-    }
-    catch {
-        Write-Verbose 'Missing Package Manager, installing'
-        Redo-PackageManagement
-    }
-
-    try { $null = Get-Command Get-PackageProvider -ErrorAction Stop }
-    catch { Redo-PowerShellGet }
-
+    # Seems NuGet needs to be installed first
     $Nuget = Get-PackageProvider NuGet -ListAvailable -ErrorAction SilentlyContinue | Where-Object { $_.Version -gt $NuGetMinVersion }
     if (!$Nuget) {
         $null = Install-PackageProvider NuGet -MinimumVersion $NuGetMinVersion -Force -Confirm:$false
@@ -147,6 +134,17 @@ function Initialize-PSGallery {
             catch { Redo-PowerShellGet }
         }
     }
+
+    try {
+        $null = Get-Command Install-PackageProvider -ErrorAction Stop
+        $null = Get-Command Get-PackageProvider -ErrorAction Stop
+        $PackageManagement = Get-Module PackageManagement -ListAvailable -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
+        if ($PackageManagement.Version -lt $PackageManagementMinVersion) { throw }
+    }
+    catch { Redo-PackageManagement }
+
+    try { $null = Get-Command Install-Module -ErrorAction Stop }
+    catch { Redo-PowerShellGet }
 
     try { $null = Get-PackageSource -Name PSNuGet -ErrorAction Stop }
     catch { $null = Register-PackageSource -Name PSNuGet -Location $GalleryURL -ProviderName NuGet -Force }
