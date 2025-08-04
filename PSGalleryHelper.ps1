@@ -13,9 +13,10 @@ function Initialize-PSGallery {
     Purpose/Change: Initial script development
     #>
     [cmdletbinding()]
-    Param()
+    param()
     $NuGetMinVersion = [System.Version]'2.8.5.201'
     $PackageManagementMinVersion = [System.Version]'1.4.4'
+    $PowerShellGetMinVersion = [System.Version]'2.2.5'
     $GalleryURL = 'https://www.powershellgallery.com/api/v2/'
     $PowerShellGetURL = 'https://psg-prod-eastus.azureedge.net/packages/powershellget.2.2.5.nupkg'
     $PackageManagementURL = 'https://psg-prod-eastus.azureedge.net/packages/packagemanagement.1.4.7.nupkg'
@@ -30,7 +31,7 @@ function Initialize-PSGallery {
 
     function _Install-Module {
         [cmdletbinding()]
-        Param(
+        param(
             [Parameter(mandatory = $true)]
             $Module,
             [Parameter(mandatory = $true)]
@@ -139,11 +140,15 @@ function Initialize-PSGallery {
         $null = Get-Command Install-PackageProvider -ErrorAction Stop
         $null = Get-Command Get-PackageProvider -ErrorAction Stop
         $PackageManagement = Get-Module PackageManagement -ListAvailable -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
-        if ($PackageManagement.Version -lt $PackageManagementMinVersion) { throw }
+        if (!$PackageManagement -or $PackageManagement.Version -lt $PackageManagementMinVersion) { throw }
     }
     catch { Redo-PackageManagement }
 
-    try { $null = Get-Command Install-Module -ErrorAction Stop }
+    try { 
+        $null = Get-Command Install-Module -ErrorAction Stop 
+        $PowerShellGet = Get-Module PowerShellGet -ListAvailable | Sort-Object Version -Descending | Select-Object -First 1
+        if ($PowershellGet.Version -lt $PowerShellGetMinVersion) { throw }
+    }
     catch { Redo-PowerShellGet }
 
     try { $null = Get-PackageSource -Name PSNuGet -ErrorAction Stop }
