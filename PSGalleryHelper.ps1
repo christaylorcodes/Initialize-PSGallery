@@ -146,8 +146,8 @@ function Initialize-PSGallery {
 
     try { 
         $null = Get-Command Install-Module -ErrorAction Stop 
-        $PowerShellGet = Get-Module PowerShellGet -ListAvailable | Sort-Object Version -Descending | Select-Object -First 1
-        if ($PowershellGet.Version -lt $PowerShellGetMinVersion) { throw }
+        $PowerShellGet = Get-Module PowerShellGet -ListAvailable -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
+        if (!$PowerShellGet -or $PowershellGet.Version -lt $PowerShellGetMinVersion) { throw }
     }
     catch { Redo-PowerShellGet }
 
