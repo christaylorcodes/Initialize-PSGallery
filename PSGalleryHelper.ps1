@@ -106,21 +106,37 @@ function Initialize-PSGallery {
     try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 }
     catch { Write-Error 'TLS 1.2 Not supported.' -ErrorAction Stop }
 
-    $WinmgmtService = Get-Service Winmgmt
-    if ($WinmgmtService.StartType -eq 'Disabled') { Set-Service winmgmt -StartupType Manual }
-
-    if ($env:PSModulePath -split ';' -notcontains "$env:ProgramFiles\WindowsPowerShell\Modules") {
-        [Environment]::SetEnvironmentVariable(
-            'PSModulePath',
-            ((([Environment]::GetEnvironmentVariable('PSModulePath', 'Machine') -split ';') + "$env:ProgramFiles\WindowsPowerShell\Modules") -join ';'),
-            'Machine'
-        )
+    # Everything from here to the gallery check is best-effort environment repair. Callers commonly
+    # set $ErrorActionPreference = 'Stop' before dot-sourcing this helper, which promotes even
+    # non-terminating errors, so each step is isolated - none of them should abort the bootstrap.
+    try {
+        $WinmgmtService = Get-Service Winmgmt -ErrorAction Stop
+        if ($WinmgmtService.StartType -eq 'Disabled') { Set-Service winmgmt -StartupType Manual -ErrorAction Stop }
     }
+    catch { Write-Verbose "Could not set Winmgmt startup type: $($_.Exception.Message)" }
+
+    # Requires admin; throws SecurityException when running unelevated.
+    try {
+        if ($env:PSModulePath -split ';' -notcontains "$env:ProgramFiles\WindowsPowerShell\Modules") {
+            [Environment]::SetEnvironmentVariable(
+                'PSModulePath',
+                ((([Environment]::GetEnvironmentVariable('PSModulePath', 'Machine') -split ';') + "$env:ProgramFiles\WindowsPowerShell\Modules") -join ';'),
+                'Machine'
+            )
+        }
+    }
+    catch { Write-Verbose "Could not update machine PSModulePath: $($_.Exception.Message)" }
     
     # Remove Package Management Preview
-    $null = & MsiExec /X '{57E5A8BB-41EB-4F09-B332-B535C5954A28}' /qn
+    try { $null = & MsiExec /X '{57E5A8BB-41EB-4F09-B332-B535C5954A28}' /qn }
+    catch { Write-Verbose "Could not remove PackageManagement preview MSI: $($_.Exception.Message)" }
     
-    Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Scope Process -Confirm:$false -Force -ErrorAction SilentlyContinue
+    # A GPO-enforced execution policy makes this throw a terminating SecurityException
+    # (ExecutionPolicyOverride) that -ErrorAction SilentlyContinue cannot suppress. When that happens
+    # the effective policy is already set by policy and is usually permissive enough, so failing here
+    # must not abort the bootstrap.
+    try { Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Scope Process -Confirm:$false -Force -ErrorAction Stop }
+    catch { Write-Verbose "Could not set process execution policy (likely GPO-enforced): $($_.Exception.Message)" }
 
     try { $null = Invoke-RestMethod $GalleryURL }
     catch { throw "Unable to contact gallery: $GalleryURL" }
