@@ -18,10 +18,19 @@ function Initialize-PSGallery {
     $PackageManagementMinVersion = [System.Version]'1.4.4'
     $PowerShellGetMinVersion = [System.Version]'2.2.5'
     $GalleryURL = 'https://www.powershellgallery.com/api/v2/'
-    # Gallery API package URLs redirect to whatever CDN the gallery currently uses
-    # (the old psg-prod-eastus.azureedge.net host was retired).
-    $PowerShellGetURL = 'https://www.powershellgallery.com/api/v2/package/PowerShellGet/2.2.5'
-    $PackageManagementURL = 'https://www.powershellgallery.com/api/v2/package/PackageManagement/1.4.8.1'
+    # Fallback packages for when Install-Module can't be used. Gallery API package URLs redirect to
+    # whatever CDN the gallery currently uses (the old psg-prod-eastus.azureedge.net host was retired).
+    # Gallery package versions are immutable, so the SHA256 of each nupkg is pinned.
+    $FallbackPackages = @{
+        PowerShellGet     = @{
+            URL    = 'https://www.powershellgallery.com/api/v2/package/PowerShellGet/2.2.5'
+            SHA256 = '6B8CEBF2A464EAEB31B0A6D627355C30D9D1899DBA0CE3BDD0D4E7AFCA148673'
+        }
+        PackageManagement = @{
+            URL    = 'https://www.powershellgallery.com/api/v2/package/PackageManagement/1.4.8.1'
+            SHA256 = '7E1F8A75B6BC8A83D8ABFF79F6690FC1DFBD534FD3E5733D97E19BCB5954C13E'
+        }
+    }
 
     function Register-PSGallery {
         if ($Host.Version.Major -gt 4) { Register-PSRepository -Default }
@@ -37,15 +46,22 @@ function Initialize-PSGallery {
             [Parameter(mandatory = $true)]
             $Module,
             [Parameter(mandatory = $true)]
-            $ModuleURL
+            $ModuleURL,
+            [Parameter(mandatory = $true)]
+            $SHA256
         )
         $DownloadPath = "$env:TEMP\$($Module).zip"
         $ExtractPath = "$env:TEMP\$($Module)"
         Remove-Item @($DownloadPath, $ExtractPath) -Recurse -Force -Confirm:$false -ErrorAction SilentlyContinue
-        # Download, extract and validate before removing the installed copy, so a failed download
-        # doesn't also delete what's in Program Files.
+        # Download, verify, extract and validate before removing the installed copy, so a failed
+        # download doesn't also delete what's in Program Files.
         try {
             Invoke-RestMethod $ModuleURL -OutFile $DownloadPath -UseBasicParsing -ErrorAction Stop
+            # .NET hashing rather than Get-FileHash, which doesn't exist on PowerShell 3.
+            $Stream = [System.IO.File]::OpenRead($DownloadPath)
+            try { $Hash = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($Stream)) -replace '-' }
+            finally { $Stream.Dispose() }
+            if ($Hash -ne $SHA256) { throw "SHA256 mismatch: expected $SHA256, got $Hash." }
             Unblock-File $DownloadPath -ErrorAction Stop
             Add-Type -Assembly 'System.IO.Compression.Filesystem' -ErrorAction Stop
             [System.IO.Compression.ZipFile]::ExtractToDirectory($DownloadPath, $ExtractPath)
@@ -56,7 +72,8 @@ function Initialize-PSGallery {
         }
         catch {
             Remove-Item @($DownloadPath, $ExtractPath) -Recurse -Force -Confirm:$false -ErrorAction SilentlyContinue
-            throw "Failed to download/extract $Module from $($ModuleURL): $($_.Exception.Message)"
+            # Wrap rather than replace, so the original exception stays available as InnerException.
+            throw (New-Object System.Exception "Failed to download/extract $Module from $($ModuleURL): $($_.Exception.Message)", $_.Exception)
         }
 
         if ($PSVersionTable.PSVersion.Major -ge 5) {
@@ -74,9 +91,13 @@ function Initialize-PSGallery {
         Remove-Item @($DownloadPath, $ExtractPath) -Recurse -Force -Confirm:$false -ErrorAction SilentlyContinue
     }
     
-    function Redo-PowerShellGet {
-        Write-Verbose 'Issue with PowerShellGet, Reinstalling.'
-        $Module = 'PowerShellGet'
+    function Redo-Module {
+        param(
+            [Parameter(mandatory = $true)]
+            [ValidateSet('PowerShellGet', 'PackageManagement')]
+            $Module
+        )
+        Write-Verbose "Issue with $Module, Reinstalling."
         try {
             foreach ($ProfilePath in $env:PSModulePath.Split(';')) {
                 $FullPath = Join-Path $ProfilePath $Module
@@ -86,24 +107,7 @@ function Initialize-PSGallery {
             $null = Install-Module $Module -Force -AllowClobber -ErrorAction Stop
         }
         catch {
-            _Install-Module -Module $Module -ModuleURL $PowerShellGetURL
-        }
-        Import-Module $Module -Force -ErrorAction Stop
-    }
-
-    function Redo-PackageManagement {
-        Write-Verbose 'Issue with PackageManagement, Reinstalling.'
-        $Module = 'PackageManagement'
-        try {
-            foreach ($ProfilePath in $env:PSModulePath.Split(';')) {
-                $FullPath = Join-Path $ProfilePath $Module
-                Get-ChildItem $FullPath -Exclude '1.0.0.1' -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
-            }
-            Register-PSGallery -ErrorAction Stop
-            $null = Install-Module $Module -Force -AllowClobber -ErrorAction Stop
-        }
-        catch {
-            _Install-Module -Module $Module -ModuleURL $PackageManagementURL
+            _Install-Module -Module $Module -ModuleURL $FallbackPackages[$Module].URL -SHA256 $FallbackPackages[$Module].SHA256
         }
         Import-Module $Module -Force -ErrorAction Stop
     }
@@ -158,7 +162,7 @@ function Initialize-PSGallery {
     # An outdated-but-present PackageManagement (e.g. in-box 1.0.0.1) is left to the normal flow,
     # where installing PowerShellGet pulls in a current PackageManagement as a dependency.
     if (-not (Get-Command Get-PackageProvider -ErrorAction SilentlyContinue) -or -not (Get-Command Install-PackageProvider -ErrorAction SilentlyContinue)) {
-        Redo-PackageManagement
+        Redo-Module PackageManagement
     }
 
     # Seems NuGet needs to be installed first
@@ -169,7 +173,7 @@ function Initialize-PSGallery {
         try { Update-Module PowerShellGet -Confirm:$false -ErrorAction Stop }
         catch { 
             try { Install-Module PowerShellGet -Force -Confirm:$false -ErrorAction Stop }
-            catch { Redo-PowerShellGet }
+            catch { Redo-Module PowerShellGet }
         }
     }
 
@@ -179,14 +183,14 @@ function Initialize-PSGallery {
         $PackageManagement = Get-Module PackageManagement -ListAvailable -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
         if (!$PackageManagement -or $PackageManagement.Version -lt $PackageManagementMinVersion) { throw }
     }
-    catch { Redo-PackageManagement }
+    catch { Redo-Module PackageManagement }
 
     try {
         $null = Get-Command Install-Module -ErrorAction Stop
         $PowerShellGet = Get-Module PowerShellGet -ListAvailable -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
         if (!$PowerShellGet -or $PowershellGet.Version -lt $PowerShellGetMinVersion) { throw }
     }
-    catch { Redo-PowerShellGet }
+    catch { Redo-Module PowerShellGet }
 
     try { $null = Get-PackageSource -Name PSNuGet -ErrorAction Stop }
     catch { $null = Register-PackageSource -Name PSNuGet -Location $GalleryURL -ProviderName NuGet -Force }
@@ -194,7 +198,7 @@ function Initialize-PSGallery {
     try { $null = Get-PSRepository 'PSGallery' -ErrorAction Stop }
     catch {
         if ($_.exception.message -eq 'Invalid class' -or $_.exception.message -eq 'Unable to find module providers (PowerShellGet).') {
-            Redo-PowerShellGet
+            Redo-Module PowerShellGet
         }
         else {
             Write-Verbose 'Registering PSGallery.'
