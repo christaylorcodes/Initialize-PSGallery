@@ -18,8 +18,10 @@ function Initialize-PSGallery {
     $PackageManagementMinVersion = [System.Version]'1.4.4'
     $PowerShellGetMinVersion = [System.Version]'2.2.5'
     $GalleryURL = 'https://www.powershellgallery.com/api/v2/'
-    $PowerShellGetURL = 'https://psg-prod-eastus.azureedge.net/packages/powershellget.2.2.5.nupkg'
-    $PackageManagementURL = 'https://psg-prod-eastus.azureedge.net/packages/packagemanagement.1.4.7.nupkg'
+    # Gallery API package URLs redirect to whatever CDN the gallery currently uses
+    # (the old psg-prod-eastus.azureedge.net host was retired).
+    $PowerShellGetURL = 'https://www.powershellgallery.com/api/v2/package/PowerShellGet/2.2.5'
+    $PackageManagementURL = 'https://www.powershellgallery.com/api/v2/package/PackageManagement/1.4.8.1'
 
     function Register-PSGallery {
         if ($Host.Version.Major -gt 4) { Register-PSRepository -Default }
@@ -40,13 +42,24 @@ function Initialize-PSGallery {
         $DownloadPath = "$env:TEMP\$($Module).zip"
         $ExtractPath = "$env:TEMP\$($Module)"
         Remove-Item @($DownloadPath, $ExtractPath) -Recurse -Force -Confirm:$false -ErrorAction SilentlyContinue
-        Invoke-RestMethod $ModuleURL -OutFile $DownloadPath
-        Unblock-File $DownloadPath
-        Add-Type -Assembly 'System.IO.Compression.Filesystem'
-        [System.IO.Compression.ZipFile]::ExtractToDirectory($DownloadPath, $ExtractPath)
-        
+        # Download, extract and validate before removing the installed copy, so a failed download
+        # doesn't also delete what's in Program Files.
+        try {
+            Invoke-RestMethod $ModuleURL -OutFile $DownloadPath -UseBasicParsing -ErrorAction Stop
+            Unblock-File $DownloadPath -ErrorAction Stop
+            Add-Type -Assembly 'System.IO.Compression.Filesystem' -ErrorAction Stop
+            [System.IO.Compression.ZipFile]::ExtractToDirectory($DownloadPath, $ExtractPath)
+            if (-not (Test-Path "$ExtractPath\$($Module).psd1")) { throw "Manifest $($Module).psd1 not found in package." }
+            if ($PSVersionTable.PSVersion.Major -ge 5) {
+                $ModuleData = Import-PowerShellDataFile -Path "$ExtractPath\$($Module).psd1" -ErrorAction Stop
+            }
+        }
+        catch {
+            Remove-Item @($DownloadPath, $ExtractPath) -Recurse -Force -Confirm:$false -ErrorAction SilentlyContinue
+            throw "Failed to download/extract $Module from $($ModuleURL): $($_.Exception.Message)"
+        }
+
         if ($PSVersionTable.PSVersion.Major -ge 5) {
-            $ModuleData = Import-PowerShellDataFile -Path "$ExtractPath\$($Module).psd1"
             Remove-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module" -Recurse -Force -ErrorAction SilentlyContinue
             $null = New-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module\$($ModuleData.ModuleVersion)" -ItemType Directory -Force
             [System.IO.Compression.ZipFile]::ExtractToDirectory($DownloadPath, "$env:ProgramFiles\WindowsPowerShell\Modules\$Module\$($ModuleData.ModuleVersion)")
@@ -55,7 +68,7 @@ function Initialize-PSGallery {
             # These versions of PoSh want the files in the root of the drive not version sub folders
             Remove-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module" -Recurse -Force -ErrorAction SilentlyContinue
             $null = New-Item "$env:ProgramFiles\WindowsPowerShell\Modules\$Module" -ItemType Directory -ErrorAction SilentlyContinue
-            Copy-Item "$env:TEMP\$Module" "$env:ProgramFiles\WindowsPowerShell\Modules" -Force -Recurse
+            Copy-Item $ExtractPath "$env:ProgramFiles\WindowsPowerShell\Modules" -Force -Recurse
         }
 
         Remove-Item @($DownloadPath, $ExtractPath) -Recurse -Force -Confirm:$false -ErrorAction SilentlyContinue
@@ -75,7 +88,7 @@ function Initialize-PSGallery {
         catch {
             _Install-Module -Module $Module -ModuleURL $PowerShellGetURL
         }
-        Import-Module $Module -Force
+        Import-Module $Module -Force -ErrorAction Stop
     }
 
     function Redo-PackageManagement {
@@ -92,7 +105,7 @@ function Initialize-PSGallery {
         catch {
             _Install-Module -Module $Module -ModuleURL $PackageManagementURL
         }
-        Import-Module $Module -Force
+        Import-Module $Module -Force -ErrorAction Stop
     }
 
     if ($PSVersionTable.PSVersion.Major -lt 3) { Write-Error 'Requires PowerShell version 3 or greater.' -ErrorAction Stop }
@@ -138,11 +151,19 @@ function Initialize-PSGallery {
     try { Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Scope Process -Confirm:$false -Force -ErrorAction Stop }
     catch { Write-Verbose "Could not set process execution policy (likely GPO-enforced): $($_.Exception.Message)" }
 
-    try { $null = Invoke-RestMethod $GalleryURL }
+    try { $null = Invoke-RestMethod $GalleryURL -UseBasicParsing }
     catch { throw "Unable to contact gallery: $GalleryURL" }
 
+    # If PackageManagement is missing entirely, the NuGet step below can't run, so repair it first.
+    # An outdated-but-present PackageManagement (e.g. in-box 1.0.0.1) is left to the normal flow,
+    # where installing PowerShellGet pulls in a current PackageManagement as a dependency.
+    if (-not (Get-Command Get-PackageProvider -ErrorAction SilentlyContinue) -or -not (Get-Command Install-PackageProvider -ErrorAction SilentlyContinue)) {
+        Redo-PackageManagement
+    }
+
     # Seems NuGet needs to be installed first
-    $Nuget = Get-PackageProvider NuGet -ListAvailable -ErrorAction SilentlyContinue | Where-Object { $_.Version -gt $NuGetMinVersion }
+    try { $Nuget = Get-PackageProvider NuGet -ListAvailable -ErrorAction Stop | Where-Object { $_.Version -ge $NuGetMinVersion } }
+    catch { $Nuget = $null }
     if (!$Nuget) {
         $null = Install-PackageProvider NuGet -MinimumVersion $NuGetMinVersion -Force -Confirm:$false
         try { Update-Module PowerShellGet -Confirm:$false -ErrorAction Stop }
@@ -160,8 +181,8 @@ function Initialize-PSGallery {
     }
     catch { Redo-PackageManagement }
 
-    try { 
-        $null = Get-Command Install-Module -ErrorAction Stop 
+    try {
+        $null = Get-Command Install-Module -ErrorAction Stop
         $PowerShellGet = Get-Module PowerShellGet -ListAvailable -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
         if (!$PowerShellGet -or $PowershellGet.Version -lt $PowerShellGetMinVersion) { throw }
     }
